@@ -13,3 +13,11 @@ devenv
 .DS_Store
 localbin
 nohup.out
+
+#####################################################
+# 启动忽略文件
+dataDir
+commitlog
+config
+consumequeue
+index
