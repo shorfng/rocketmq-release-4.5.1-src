@@ -121,8 +121,10 @@ public class RouteInfoManager {
         RegisterBrokerResult result = new RegisterBrokerResult();
         try {
             try {
+                // 加锁
                 this.lock.writeLock().lockInterruptibly();
 
+                // 维护 clusterAddrTable
                 Set<String> brokerNames = this.clusterAddrTable.get(clusterName);
                 if (null == brokerNames) {
                     brokerNames = new HashSet<String>();
@@ -132,12 +134,17 @@ public class RouteInfoManager {
 
                 boolean registerFirst = false;
 
+                // 维护 brokerAddrTable
                 BrokerData brokerData = this.brokerAddrTable.get(brokerName);
+
+                // 第一次注册,则创建 brokerData
                 if (null == brokerData) {
                     registerFirst = true;
                     brokerData = new BrokerData(clusterName, brokerName, new HashMap<Long, String>());
                     this.brokerAddrTable.put(brokerName, brokerData);
                 }
+
+                // 非第一次注册,更新Broker
                 Map<Long, String> brokerAddrsMap = brokerData.getBrokerAddrs();
                 //Switch slave to master: first remove <1, IP:PORT> in namesrv, then add <0, IP:PORT>
                 //The same IP:PORT must only have one record in brokerAddrTable
@@ -152,12 +159,10 @@ public class RouteInfoManager {
                 String oldAddr = brokerData.getBrokerAddrs().put(brokerId, brokerAddr);
                 registerFirst = registerFirst || (null == oldAddr);
 
-                if (null != topicConfigWrapper
-                    && MixAll.MASTER_ID == brokerId) {
-                    if (this.isBrokerTopicConfigChanged(brokerAddr, topicConfigWrapper.getDataVersion())
-                        || registerFirst) {
-                        ConcurrentMap<String, TopicConfig> tcTable =
-                            topicConfigWrapper.getTopicConfigTable();
+                // 维护 topicQueueTable
+                if (null != topicConfigWrapper && MixAll.MASTER_ID == brokerId) {
+                    if (this.isBrokerTopicConfigChanged(brokerAddr, topicConfigWrapper.getDataVersion()) || registerFirst) {
+                        ConcurrentMap<String, TopicConfig> tcTable = topicConfigWrapper.getTopicConfigTable();
                         if (tcTable != null) {
                             for (Map.Entry<String, TopicConfig> entry : tcTable.entrySet()) {
                                 this.createAndUpdateQueueData(brokerName, entry.getValue());
@@ -195,6 +200,7 @@ public class RouteInfoManager {
                     }
                 }
             } finally {
+                // 释放锁
                 this.lock.writeLock().unlock();
             }
         } catch (Exception e) {
@@ -225,6 +231,7 @@ public class RouteInfoManager {
     }
 
     private void createAndUpdateQueueData(final String brokerName, final TopicConfig topicConfig) {
+        // 创建 QueueData
         QueueData queueData = new QueueData();
         queueData.setBrokerName(brokerName);
         queueData.setWriteQueueNums(topicConfig.getWriteQueueNums());
@@ -232,19 +239,23 @@ public class RouteInfoManager {
         queueData.setPerm(topicConfig.getPerm());
         queueData.setTopicSynFlag(topicConfig.getTopicSysFlag());
 
+        // 获得topicQueueTable中队列集合
         List<QueueData> queueDataList = this.topicQueueTable.get(topicConfig.getTopicName());
+        // topicQueueTable为空,则直接添加queueData到队列集合
         if (null == queueDataList) {
             queueDataList = new LinkedList<QueueData>();
             queueDataList.add(queueData);
             this.topicQueueTable.put(topicConfig.getTopicName(), queueDataList);
             log.info("new topic registered, {} {}", topicConfig.getTopicName(), queueData);
         } else {
+            // 判断是否是新的队列
             boolean addNewOne = true;
 
             Iterator<QueueData> it = queueDataList.iterator();
             while (it.hasNext()) {
                 QueueData qd = it.next();
                 if (qd.getBrokerName().equals(brokerName)) {
+                    // 如果brokerName相同,代表不是新的队列
                     if (qd.equals(queueData)) {
                         addNewOne = false;
                     } else {
@@ -255,6 +266,7 @@ public class RouteInfoManager {
                 }
             }
 
+            // 如果是新的队列,则添加队列到queueDataList
             if (addNewOne) {
                 queueDataList.add(queueData);
             }
