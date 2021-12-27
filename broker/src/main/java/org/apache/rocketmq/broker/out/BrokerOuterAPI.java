@@ -124,34 +124,41 @@ public class BrokerOuterAPI {
         final boolean compressed) {
 
         final List<RegisterBrokerResult> registerBrokerResultList = Lists.newArrayList();
+
+        // 获得nameServer地址信息
         List<String> nameServerAddressList = this.remotingClient.getNameServerAddressList();
+
+        // 遍历所有 nameserver 列表
         if (nameServerAddressList != null && nameServerAddressList.size() > 0) {
-
+            // 封装请求头
             final RegisterBrokerRequestHeader requestHeader = new RegisterBrokerRequestHeader();
-            requestHeader.setBrokerAddr(brokerAddr);
-            requestHeader.setBrokerId(brokerId);
-            requestHeader.setBrokerName(brokerName);
-            requestHeader.setClusterName(clusterName);
-            requestHeader.setHaServerAddr(haServerAddr);
-            requestHeader.setCompressed(compressed);
+            requestHeader.setBrokerAddr(brokerAddr);     // broker 地址
+            requestHeader.setBrokerId(brokerId);         // broker id
+            requestHeader.setBrokerName(brokerName);     // broker 名称
+            requestHeader.setClusterName(clusterName);   // 集群名称
+            requestHeader.setHaServerAddr(haServerAddr); // slave 地址
+            requestHeader.setCompressed(compressed);     // 消息是否压缩
 
+            // 封装请求体
             RegisterBrokerBody requestBody = new RegisterBrokerBody();
             requestBody.setTopicConfigSerializeWrapper(topicConfigWrapper);
             requestBody.setFilterServerList(filterServerList);
             final byte[] body = requestBody.encode(compressed);
             final int bodyCrc32 = UtilAll.crc32(body);
             requestHeader.setBodyCrc32(bodyCrc32);
+
+            // 使用多线程的方式，向所有 nameserver 注册 broker 信息
             final CountDownLatch countDownLatch = new CountDownLatch(nameServerAddressList.size());
             for (final String namesrvAddr : nameServerAddressList) {
                 brokerOuterExecutor.execute(new Runnable() {
                     @Override
                     public void run() {
                         try {
+                            // 分别向NameServer注册
                             RegisterBrokerResult result = registerBroker(namesrvAddr,oneway, timeoutMills,requestHeader,body);
                             if (result != null) {
                                 registerBrokerResultList.add(result);
                             }
-
                             log.info("register broker[{}]to name server {} OK", brokerId, namesrvAddr);
                         } catch (Exception e) {
                             log.warn("registerBroker Exception, {}", namesrvAddr, e);
@@ -184,6 +191,7 @@ public class BrokerOuterAPI {
 
         if (oneway) {
             try {
+                // 通过 nettyclient 发送单向消息，进行注册
                 this.remotingClient.invokeOneway(namesrvAddr, request, timeoutMills);
             } catch (RemotingTooMuchRequestException e) {
                 // Ignore
@@ -191,6 +199,7 @@ public class BrokerOuterAPI {
             return null;
         }
 
+        // 如果不是单向请求，则同步等待 nameserver 响应
         RemotingCommand response = this.remotingClient.invokeSync(namesrvAddr, request, timeoutMills);
         assert response != null;
         switch (response.getCode()) {
