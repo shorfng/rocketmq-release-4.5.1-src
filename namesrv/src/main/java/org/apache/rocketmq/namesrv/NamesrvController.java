@@ -84,6 +84,7 @@ public class NamesrvController {
         // 注册处理器
         this.registerProcessor();
 
+        // 每隔10s扫描一次为活跃Broker
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
